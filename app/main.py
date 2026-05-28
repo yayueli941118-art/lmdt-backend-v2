@@ -6,7 +6,7 @@ LMDT 2.0 — FastAPI 应用入口
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import macro
+from app.routers import macro, micro
 
 app = FastAPI(
     title="LMDT 2.0 API",
@@ -25,6 +25,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(macro.router)
+app.include_router(micro.router)
 
 
 @app.get("/")
