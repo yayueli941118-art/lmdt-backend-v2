@@ -13,9 +13,12 @@ class IndividualSimulateRequest(BaseModel):
     train_type: str = Field(default="无额外培训", description="培训类型：无额外培训 / 一般培训 (通用技能) / 特殊培训 (企业专属技能)")
     disc: float = Field(default=10.0, ge=0.0, le=50.0, description="劳动力市场歧视折损率(%)")
     migrate: bool = Field(default=False, description="是否考虑城市迁移")
+    migrate_age: int = Field(default=22, ge=18, le=60, description="迁移发生年龄")
     w_diff: float = Field(default=10.0, description="大城市月薪相较于家乡的溢价(k/月)")
     c_move: float = Field(default=25.0, description="一次性搬迁阵痛成本(k)")
     c_psych: float = Field(default=8.0, description="年度心理与适应成本(k/年)")
+    family_migrate: bool = Field(default=False, description="是否考虑家庭联合迁移")
+    spouse_loss: float = Field(default=3.0, ge=2.0, le=15.0, description="配偶月薪损失(k/月)")
 
     class Config:
         json_schema_extra = {

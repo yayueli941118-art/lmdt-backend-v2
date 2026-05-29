@@ -22,9 +22,12 @@ def calculate_individual(
     train_type: str,
     disc: float,
     migrate: bool,
+    migrate_age: int,
     w_diff: float,
     c_move: float,
     c_psych: float,
+    family_migrate: bool = False,
+    spouse_loss: float = 3.0,
 ) -> dict:
     """完全向量化的个体实验室计算"""
 
@@ -94,17 +97,19 @@ def calculate_individual(
         first_idx = post_grad_idx[0]
         vs_china = float((w_edu_raw[first_idx] / real_wage - 1.0) * 100)
 
-    # 8. 空间迁移套利 NPV
+    # 8. 空间迁移套利 NPV（起点 = migrate_age）
     migrate_years, migrate_npv_list = [], []
     is_worth_it = False
     if migrate:
-        t_max = 60 - grad_age
+        t_max = 60 - migrate_age
         if t_max > 0:
             t_vec = np.arange(1, t_max + 1)
-            net_flow = np.full(t_max, w_diff * 12.0 - c_psych)
+            # 配偶损失计入年净现金流
+            spouse_annual = spouse_loss * 12.0 if family_migrate else 0.0
+            net_flow = np.full(t_max, w_diff * 12.0 - c_psych - spouse_annual)
             net_flow[0] -= c_move
             discounted = net_flow / ((1 + 0.05) ** t_vec)
-            migrate_years = (grad_age + t_vec).tolist()
+            migrate_years = (migrate_age + t_vec).tolist()
             migrate_npv_list = np.cumsum(discounted).tolist()
             is_worth_it = migrate_npv_list[-1] > 0 if migrate_npv_list else False
 

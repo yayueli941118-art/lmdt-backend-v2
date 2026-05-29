@@ -26,9 +26,12 @@ async def simulate(request: IndividualSimulateRequest) -> IndividualSimulateResp
             train_type=request.train_type,
             disc=request.disc,
             migrate=request.migrate,
+            migrate_age=request.migrate_age,
             w_diff=request.w_diff,
             c_move=request.c_move,
             c_psych=request.c_psych,
+            family_migrate=request.family_migrate,
+            spouse_loss=request.spouse_loss,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Core calculation broken: {str(e)}")
