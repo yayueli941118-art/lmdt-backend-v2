@@ -87,7 +87,7 @@ def calculate_individual(
             baseline_wage[i] = _mincer_at_given_exp(12, age - 18, 0, 0, 0)
 
         # ── 选择组 ──
-        work_start_age = edu  # 用受教育年限当作开始工作年龄的简化
+        work_start_age = edu + 6  # 6岁入学 + 受教育年限 = 开始工作年龄
 
         if age < work_start_age:
             # 在读期间：负的机会成本（放弃的工资+学费）
@@ -115,8 +115,9 @@ def calculate_individual(
 
     # 工资反超年：selected_wage > baseline_wage 的第一年（已有工作后）
     crossover_age = None
+    work_start_age = edu + 6
     for i in range(n):
-        if age_vec[i] >= edu and selected_wage[i] > baseline_wage[i]:
+        if age_vec[i] >= work_start_age and selected_wage[i] > baseline_wage[i]:
             crossover_age = int(age_vec[i])
             break
 
@@ -125,7 +126,7 @@ def calculate_individual(
 
     # ── 中国基准对比 ──
     real_wage_baseline = CHINA_WAGE_BY_EDU_2024.get(edu, 0.0)
-    first_work_age = edu
+    first_work_age = edu + 6
     first_work_idx = max(0, first_work_age - AGE_START)
     vs_china_baseline = float((selected_gross[first_work_idx] / real_wage_baseline - 1.0) * 100) if real_wage_baseline > 0 else 0.0
 
