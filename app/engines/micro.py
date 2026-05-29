@@ -1,6 +1,6 @@
 """
 个体职业实验室 — 明瑟工资方程 + 迁移 NPV 算法引擎
-完全解耦 Streamlit 依赖，纯 NumPy 计算
+统一年龄轴 (18-60)，包含教育投资的机会成本
 """
 
 import numpy as np
@@ -14,50 +14,44 @@ CHINA_WAGE_BY_EDU_2024 = {
     22: 21000.0,
 }
 
-CURVE_RESOLUTION = 80  # 平滑曲线点数
+AGE_START = 18
+AGE_END = 60
+CURVE_RESOLUTION = AGE_END - AGE_START + 1  # 43个点，每个年龄一个
+
+# 上学期间月度折算成本（含学费+生活费，单位：元/月）
+TUITION_MONTHLY = 2500.0
 
 
-def calc_mincer_core(s: int, exp_vec: np.ndarray, gen_t: float, spec_t: float, disc_pct: float):
+def _mincer_at_given_exp(edu: float, exp: float, gen_t: float, spec_t: float, disc_pct: float) -> float:
     """
-    经典明瑟工资方程扩展模型 (Mincer 1974)
-    Ln(W) = b0 + b1*S + b2*Exp + b3*Exp² + b4*GenTrain + b5*SpecTrain
-
-    参数校准基于中国长期微观经济数据回归均值。
+    单点明瑟工资计算
+    Ln(W) = b0 + b1*S + b2*Exp + b3*Exp² + 培训修正
     """
-    b0 = 7.5         # 提高起薪基数，增强视觉张力
-    b1 = 0.10         # 教育回报率提高到 10%
-    b2 = 0.06         # 提高早期经验回报
-    b3 = -0.001       # 加深抛物线弯曲度
+    b0, b1, b2, b3 = 7.5, 0.10, 0.06, -0.001
 
-    ln_w = b0 + b1 * s + b2 * exp_vec + b3 * (exp_vec ** 2)
+    if exp < 0:
+        return 0.0
 
-    # 培训策略修正
+    ln_w = b0 + b1 * edu + b2 * exp + b3 * (exp ** 2)
     if gen_t > 0:
-        ln_w += 0.08  # 一般培训：全期提升通用生产率
+        ln_w += 0.08
     if spec_t > 0:
-        ln_w += -0.05 + 0.004 * exp_vec  # 特殊培训：前期交学费，后期爆发
+        ln_w += -0.05 + 0.004 * exp
 
-    w_exp = np.exp(ln_w)
-    w_disc = w_exp * (1.0 - disc_pct / 100.0)
-
-    return w_exp, w_disc
+    w = np.exp(ln_w)
+    w = w * (1.0 - disc_pct / 100.0)
+    return float(w)
 
 
 def calc_migration_npv_core(remain_years: int, annual_premium: float,
                              c_move: float, c_psych: float):
-    """
-    劳动力迁移空间套利的净现值动态累积模型 (NPV)
-    每年折现率 r = 5%
-    """
+    """迁移 NPV"""
     t_vec = np.arange(1, remain_years + 1)
     discount_rate = 0.05
-
     net_flow = np.full(remain_years, annual_premium - c_psych)
-    net_flow[0] -= c_move  # 第一年扣除搬迁硬件成本
-
+    net_flow[0] -= c_move
     discounted_flow = net_flow / ((1 + discount_rate) ** t_vec)
     cum_npv = np.cumsum(discounted_flow)
-
     return t_vec.tolist(), cum_npv.tolist()
 
 
@@ -71,48 +65,82 @@ def calculate_individual(
     c_move: float,
     c_psych: float,
 ) -> dict:
-    """个体实验室完整计算 → 返回前端契约 JSON"""
-
-    exp_vec = np.linspace(0, exp_peak, CURVE_RESOLUTION)
-
-    # 培训参数映射
+    """
+    基于年龄轴的个体实验室计算
+    - 对照组 (S=12): 18岁开始工作
+    - 实验组 (S=edu): edu-6 岁之前为读书期，之后工作
+    返回包含红区(投资期)和绿区(回报期)数据的完整契约
+    """
     gen_t = 5.0 if "一般" in train_type else 0.0
     spec_t = 3.0 if "特殊" in train_type else 0.0
 
-    # 1. 实验组明瑟方程
-    w_exp, w_disc = calc_mincer_core(edu, exp_vec, gen_t, spec_t, disc)
+    age_vec = np.arange(AGE_START, AGE_END + 1, dtype=int)
+    n = len(age_vec)
 
-    # 2. 对照组基准线（锁定 12 年高中学历）
-    w_base, _ = calc_mincer_core(12, exp_vec, 0.0, 0.0, 0.0)
+    baseline_wage = np.zeros(n)   # 高中组 (S=12)
+    selected_wage = np.zeros(n)   # 选择组
+    selected_gross = np.zeros(n)  # 选择组（不含歧视，用于凹区基准线）
 
-    # 3. 一生积累资产现值（梯形数值积分）
-    lifetime_edu = float(np.trapezoid(w_exp, exp_vec))
-    lifetime_base = float(np.trapezoid(w_base, exp_vec))
-    premium = ((lifetime_edu / lifetime_base) - 1.0) * 100
+    for i, age in enumerate(age_vec):
+        # ── 对照组：18岁起工作 ──
+        if age >= 18:
+            baseline_wage[i] = _mincer_at_given_exp(12, age - 18, 0, 0, 0)
 
-    # 4. 教育投资盈亏平衡回本年限
-    cum_edu = np.cumsum(w_exp)
-    cum_base = np.cumsum(w_base)
-    diff_cum = cum_edu - cum_base
-    be_idx = np.where(diff_cum > 0)[0]
-    breakeven_year = int(exp_vec[be_idx[0]]) if len(be_idx) > 0 and diff_cum[-1] > 0 else None
+        # ── 选择组 ──
+        work_start_age = edu  # 用受教育年限当作开始工作年龄的简化
 
-    # 5. 中国实际工资基准对比
+        if age < work_start_age:
+            # 在读期间：负的机会成本（放弃的工资+学费）
+            forgone = baseline_wage[i]  # 高中毕业此时能赚的
+            selected_gross[i] = -forgone
+            selected_wage[i] = -(TUITION_MONTHLY + forgone)
+        else:
+            gross = _mincer_at_given_exp(edu, age - work_start_age, gen_t, spec_t, 0)
+            selected_gross[i] = gross
+            selected_wage[i] = _mincer_at_given_exp(edu, age - work_start_age, gen_t, spec_t, disc)
+
+    # ── 累积净现值（含教育期成本） ──
+    baseline_cum = np.cumsum(baseline_wage)
+    selected_cum = np.cumsum(selected_wage)
+
+    # 终身总收入溢价（基于累积）
+    lifetime_selected = float(selected_cum[-1])
+    lifetime_baseline = float(baseline_cum[-1])
+    premium = ((lifetime_selected / lifetime_baseline) - 1.0) * 100 if lifetime_baseline > 0 else 0.0
+
+    # 回本年：selected_cum > baseline_cum 的第一年
+    diff_cum = selected_cum - baseline_cum
+    be_idx_arr = np.where(diff_cum > 0)[0]
+    breakeven_age = int(age_vec[be_idx_arr[0]]) if len(be_idx_arr) > 0 else None
+
+    # 工资反超年：selected_wage > baseline_wage 的第一年（已有工作后）
+    crossover_age = None
+    for i in range(n):
+        if age_vec[i] >= edu and selected_wage[i] > baseline_wage[i]:
+            crossover_age = int(age_vec[i])
+            break
+
+    # ── 歧视轨迹 ──
+    disc_wage = selected_gross * (1.0 - disc / 100.0) if disc > 0 else selected_wage.copy()
+
+    # ── 中国基准对比 ──
     real_wage_baseline = CHINA_WAGE_BY_EDU_2024.get(edu, 0.0)
-    vs_china_baseline = float((w_exp[0] / real_wage_baseline - 1.0) * 100) if real_wage_baseline > 0 else 0.0
+    first_work_age = edu
+    first_work_idx = max(0, first_work_age - AGE_START)
+    vs_china_baseline = float((selected_gross[first_work_idx] / real_wage_baseline - 1.0) * 100) if real_wage_baseline > 0 else 0.0
 
-    # 6. 迁移 NPV
-    migrate_years, migrate_npv = [], []
+    # ── 迁移 NPV ──
+    migrate_years, migrate_npv_list = [], []
     is_worth_it = False
     if migrate:
-        annual_premium = w_diff * 12.0  # 年尺度溢价 (k)
-        migrate_years, migrate_npv = calc_migration_npv_core(
+        annual_premium = w_diff * 12.0
+        migrate_years, migrate_npv_list = calc_migration_npv_core(
             remain_years=exp_peak,
             annual_premium=annual_premium,
             c_move=c_move,
             c_psych=c_psych,
         )
-        is_worth_it = len(np.where(np.array(migrate_npv) > 0)[0]) > 0 if migrate_npv else False
+        is_worth_it = len(np.where(np.array(migrate_npv_list) > 0)[0]) > 0 if migrate_npv_list else False
 
     return {
         "metrics": {
@@ -120,18 +148,20 @@ def calculate_individual(
             "discrimination_loss_pct": disc,
             "vs_china_baseline_pct": round(vs_china_baseline, 2),
             "china_baseline_value": real_wage_baseline,
-            "breakeven_year": breakeven_year,
+            "breakeven_age": breakeven_age,
+            "crossover_age": crossover_age,
         },
         "charts": {
-            "experience_years": [round(float(x), 1) for x in exp_vec],
-            "wage_curve_selected": [round(float(v), 1) for v in w_exp],
-            "wage_curve_baseline": [round(float(v), 1) for v in w_base],
-            "wage_curve_disc": [round(float(v), 1) for v in w_disc],
+            "age_years": [int(a) for a in age_vec],
+            "wage_curve_selected": [round(float(v), 1) for v in selected_wage],
+            "wage_curve_baseline": [round(float(v), 1) for v in baseline_wage],
+            "wage_curve_disc": [round(float(v), 1) for v in disc_wage],
+            "wage_curve_selected_gross": [round(float(v), 1) for v in selected_gross],
         },
         "migration": {
             "is_calculated": migrate,
             "years": migrate_years,
-            "cumulative_npv": [round(float(n), 2) for n in migrate_npv],
+            "cumulative_npv": [round(float(n), 2) for n in migrate_npv_list],
             "is_worth_it": is_worth_it,
         },
     }

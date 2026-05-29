@@ -37,14 +37,16 @@ class MetricsResponse(BaseModel):
     discrimination_loss_pct: float
     vs_china_baseline_pct: float
     china_baseline_value: float
-    breakeven_year: Optional[int] = None
+    breakeven_age: Optional[int] = None
+    crossover_age: Optional[int] = None
 
 
 class ChartsResponse(BaseModel):
-    experience_years: List[float]
+    age_years: List[int]
     wage_curve_selected: List[float]
     wage_curve_baseline: List[float]
     wage_curve_disc: List[float]
+    wage_curve_selected_gross: List[float] = []
 
 
 class MigrationResponse(BaseModel):
