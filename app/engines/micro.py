@@ -4,6 +4,7 @@
 """
 
 import numpy as np
+import numpy_financial as npf
 
 # ── 中国工资基准（分学历，2024-2025 校准） ──────────────────────
 CHINA_WAGE_BY_EDU_2024 = {
@@ -70,6 +71,14 @@ def calculate_individual(
     be_idx = np.where(cum_edu > cum_base)[0]
     breakeven_age = int(age_vec[be_idx[0]]) if len(be_idx) > 0 and (cum_edu[-1] > cum_base[-1]) else None
 
+    # 内部收益率 IRR：净现金流差额 (w_exp - w_base) 的内部报酬率
+    net_cf = w_exp - w_base
+    try:
+        irr_raw = npf.irr(net_cf)
+        irr_pct = float(irr_raw * 100) if irr_raw > 0 else 0.0
+    except Exception:
+        irr_pct = 0.0
+
     # 工资反超年龄：毕业后工资首次高于高中生的年龄
     crossover_age = None
     mask_working = age_vec >= grad_age
@@ -107,6 +116,7 @@ def calculate_individual(
             "china_baseline_value": real_wage,
             "breakeven_age": breakeven_age,
             "crossover_age": crossover_age,
+            "irr_pct": round(irr_pct, 2),
         },
         "charts": {
             "age_years": [int(a) for a in age_vec],

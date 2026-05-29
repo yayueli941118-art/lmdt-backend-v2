@@ -39,6 +39,7 @@ class MetricsResponse(BaseModel):
     china_baseline_value: float
     breakeven_age: Optional[int] = None
     crossover_age: Optional[int] = None
+    irr_pct: float = 0.0
 
 
 class ChartsResponse(BaseModel):
