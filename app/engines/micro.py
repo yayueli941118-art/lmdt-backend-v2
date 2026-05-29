@@ -86,8 +86,8 @@ def calculate_individual(
     w_base, _ = calc_mincer_core(12, exp_vec, 0.0, 0.0, 0.0)
 
     # 3. 一生积累资产现值（梯形数值积分）
-    lifetime_edu = float(np.trapz(w_exp, exp_vec))
-    lifetime_base = float(np.trapz(w_base, exp_vec))
+    lifetime_edu = float(np.trapezoid(w_exp, exp_vec))
+    lifetime_base = float(np.trapezoid(w_base, exp_vec))
     premium = ((lifetime_edu / lifetime_base) - 1.0) * 100
 
     # 4. 教育投资盈亏平衡回本年限
