@@ -3,14 +3,14 @@
 POST /api/v1/individual-lab/simulate
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.models.micro import (
     IndividualSimulateRequest,
     IndividualSimulateResponse,
-    WageCurves,
-    Metrics,
-    MigrationNPV,
+    MetricsResponse,
+    ChartsResponse,
+    MigrationResponse,
 )
 from app.engines.micro import calculate_individual
 
@@ -19,20 +19,23 @@ router = APIRouter(prefix="/api/v1/individual-lab", tags=["个体职业实验室
 
 @router.post("/simulate", response_model=IndividualSimulateResponse)
 async def simulate(request: IndividualSimulateRequest) -> IndividualSimulateResponse:
-    result = calculate_individual(
-        edu_years=request.edu_years,
-        exp_peak=request.exp_peak,
-        train_type=request.train_type.value,
-        disc_rate=request.disc_rate,
-        migrate=request.migrate.model_dump(),
-    )
-
-    wc = result["wage_curves"]
-    mt = result["metrics"]
-    mn = result["migration_npv"]
+    try:
+        result = calculate_individual(
+            edu=request.edu,
+            exp_peak=request.exp_peak,
+            train_type=request.train_type,
+            disc=request.disc,
+            migrate=request.migrate,
+            w_diff=request.w_diff,
+            c_move=request.c_move,
+            c_psych=request.c_psych,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Core calculation broken: {str(e)}")
 
     return IndividualSimulateResponse(
-        wage_curves=WageCurves(**wc),
-        metrics=Metrics(**mt),
-        migration_npv=MigrationNPV(**mn) if mn else None,
+        status="success",
+        metrics=MetricsResponse(**result["metrics"]),
+        charts=ChartsResponse(**result["charts"]),
+        migration=MigrationResponse(**result["migration"]),
     )
