@@ -127,3 +127,142 @@ def _diagnose(ai_risk: float, mismatch: float, policies: list[str]) -> tuple[str
         "SAFE",
         "✅ 运行良好：当前市场主要为摩擦性失业，劳动力供需基本匹配，贝弗里奇曲线接近理想状态。"
     )
+
+
+def simulate_unemployment(
+    natural_rate: float = 5.0,
+    min_wage: float = 25.0,
+    unemployment_benefit: float = 2000.0,
+    skill_mismatch: float = 0.5,
+    ai_risk: float = 20.0,
+    labor_demand_shock: float = 0.0,
+) -> dict:
+    """
+    失业率仿真模拟
+
+    考虑因素：
+    - 自然失业率 (NAIRU)
+    - 最低工资的就业效应 (Card & Krueger, 1994)
+    - 失业救济的搜寻效应
+    - 技能错配的结构性失业
+    - AI 冲击的技术性失业
+    - 劳动需求外生冲击
+
+    Returns:
+    - 总失业率分解
+    - 各因素贡献
+    - 时间序列模拟
+    """
+    # 摩擦性失业（基准 + 救济效应）
+    benefit_effect = max(0, (unemployment_benefit - 1500) / 10000)
+    frictional = natural_rate + benefit_effect
+
+    # 结构性失业（技能错配）
+    structural = skill_mismatch * 4.0
+
+    # 制度性失业（最低工资）
+    # 参考：最低工资每提高10%，就业减少0.1-0.3%（弹性 -0.15）
+    base_min_wage = 20.0
+    min_wage_effect = max(0, (min_wage / base_min_wage - 1) * 3.0)
+
+    # 技术性失业（AI）
+    tech_unemployment = ai_risk * 0.05
+
+    # 周期性失业（需求冲击）
+    cyclical = max(0, labor_demand_shock * 0.5)
+
+    # 总失业率
+    total = frictional + structural + min_wage_effect + tech_unemployment + cyclical
+    total = min(total, 25.0)
+
+    # 时间序列模拟（48个月）
+    months = list(range(1, 49))
+    u_series = []
+    for m in months:
+        # 逐步收敛
+        convergence = 1 - np.exp(-m / 6)
+        um = total * convergence
+        u_series.append(round(um, 2))
+
+    return {
+        "total_rate": round(total, 2),
+        "breakdown": {
+            "frictional": round(frictional, 2),
+            "structural": round(structural, 2),
+            "minimum_wage_effect": round(min_wage_effect, 2),
+            "technological": round(tech_unemployment, 2),
+            "cyclical": round(cyclical, 2),
+        },
+        "time_series": {
+            "months": months,
+            "unemployment_rate": u_series,
+        },
+        "parameters": {
+            "natural_rate": natural_rate,
+            "min_wage": min_wage,
+            "unemployment_benefit": unemployment_benefit,
+            "skill_mismatch": skill_mismatch,
+            "ai_risk": ai_risk,
+            "labor_demand_shock": labor_demand_shock,
+        },
+    }
+
+
+def simulate_minimum_wage_impact(
+    min_wage: float,
+    avg_wage: float,
+    employment: float,
+    elasticity: float = -0.15,
+) -> dict:
+    """
+    最低工资对就业的影响 (Card & Krueger 型分析)
+
+    Parameters:
+    - min_wage: 最低工资 (元/小时)
+    - avg_wage: 当前平均工资 (元/小时)
+    - employment: 当前就业人数 (万)
+    - elasticity: 就业对最低工资的弹性
+
+    Returns:
+    - 就业变化预测
+    - Kaitz 指数 (min_wage / median_wage)
+    - 受影响的工人比例
+    """
+    kaitz_index = min_wage / avg_wage if avg_wage > 0 else 0
+
+    # 就业变化
+    emp_change_pct = elasticity * (kaitz_index - 0.5) * 100 if kaitz_index > 0.5 else 0
+    emp_change = employment * emp_change_pct / 100
+    new_employment = employment + emp_change
+
+    # 受影响工人（工资在最低工资附近的）
+    affected_share = min(100, max(0, (1 - kaitz_index + 0.3) * 50))
+
+    # 不同弹性假设下的影响
+    scenarios = []
+    for e in [-0.05, -0.10, -0.15, -0.20, -0.30]:
+        change = elasticity_to_pct(kaitz_index, e)
+        scenarios.append({
+            "elasticity": e,
+            "employment_change_pct": round(change, 2),
+            "employment_change": round(employment * change / 100, 1),
+        })
+
+    return {
+        "kaitz_index": round(kaitz_index, 3),
+        "current_employment": employment,
+        "predicted_employment": round(new_employment, 1),
+        "employment_change_pct": round(emp_change_pct, 2),
+        "affected_worker_pct": round(affected_share, 2),
+        "scenarios": scenarios,
+        "benchmarks": {
+            "US_kaitz_2024": 0.33,
+            "China_kaitz_estimate": 0.45,
+            "France_kaitz_2024": 0.62,
+        },
+    }
+
+
+def elasticity_to_pct(kaitz: float, elasticity: float) -> float:
+    """弹性 → 就业变化百分比"""
+    return elasticity * (kaitz - 0.5) * 100 if kaitz > 0.5 else 0

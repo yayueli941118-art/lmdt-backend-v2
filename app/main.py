@@ -88,9 +88,15 @@ if otel_provider:
 
 # ── 路由 ──────────────────────────────────────────
 from app.routers import macro, micro
+from app.routers import labor_supply, discrimination, labor_demand, wage, macro_lab
 
 app.include_router(macro.router)
 app.include_router(micro.router)
+app.include_router(labor_supply.router)
+app.include_router(discrimination.router)
+app.include_router(labor_demand.router)
+app.include_router(wage.router)
+app.include_router(macro_lab.router)
 
 
 @app.get("/")
