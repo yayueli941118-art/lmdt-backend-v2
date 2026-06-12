@@ -53,3 +53,56 @@ async def min_wage_impact(request: dict):
         elasticity=request.get("elasticity", -0.15),
     )
     return result
+
+
+@router.post("/dmp")
+async def dmp_matching(request: dict):
+    """DMP 搜寻匹配模型：用匹配函数解释职位空缺、失业与匹配效率。"""
+    unemployed = max(float(request.get("unemployed", 120.0)), 1.0)
+    vacancies = max(float(request.get("vacancies", 80.0)), 1.0)
+    matching_efficiency = max(float(request.get("matching_efficiency", 0.65)), 0.05)
+    separation_rate = max(float(request.get("separation_rate", 0.025)), 0.001)
+    alpha = min(max(float(request.get("alpha", 0.5)), 0.1), 0.9)
+
+    matches = matching_efficiency * (unemployed ** alpha) * (vacancies ** (1 - alpha))
+    job_finding_rate = min(matches / unemployed, 1.0)
+    vacancy_filling_rate = min(matches / vacancies, 1.0)
+    steady_unemployment = separation_rate / (separation_rate + job_finding_rate)
+    theta = vacancies / unemployed
+
+    curve = []
+    for efficiency in [0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]:
+        m = efficiency * (unemployed ** alpha) * (vacancies ** (1 - alpha))
+        finding = min(m / unemployed, 1.0)
+        steady = separation_rate / (separation_rate + finding)
+        curve.append({
+            "matching_efficiency": round(efficiency, 2),
+            "job_finding_rate": round(finding * 100, 2),
+            "steady_unemployment_rate": round(steady * 100, 2),
+        })
+
+    if matching_efficiency < 0.45:
+        diagnosis = "匹配效率偏低：应强化就业服务、职业培训和岗位信息平台。"
+    elif theta < 0.5:
+        diagnosis = "岗位空缺不足：需求侧扩岗和产业吸纳能力是重点。"
+    elif theta > 1.5:
+        diagnosis = "岗位空缺较多但失业仍在：技能错配可能是主要矛盾。"
+    else:
+        diagnosis = "搜寻匹配状态较均衡：重点是保持岗位质量与劳动者技能更新。"
+
+    return {
+        "matches": round(matches, 2),
+        "theta": round(theta, 3),
+        "job_finding_rate": round(job_finding_rate * 100, 2),
+        "vacancy_filling_rate": round(vacancy_filling_rate * 100, 2),
+        "steady_unemployment_rate": round(steady_unemployment * 100, 2),
+        "diagnosis": diagnosis,
+        "curve": curve,
+        "parameters": {
+            "unemployed": unemployed,
+            "vacancies": vacancies,
+            "matching_efficiency": matching_efficiency,
+            "separation_rate": separation_rate,
+            "alpha": alpha,
+        },
+    }

@@ -64,7 +64,7 @@ app = FastAPI(
 )
 
 # ── CORS (生产环境白名单) ─────────────────────────
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")
 origins = [o.strip() for o in CORS_ORIGINS.split(",") if o.strip()]
 
 app.add_middleware(
