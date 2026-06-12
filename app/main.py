@@ -8,6 +8,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
 
 # ── OpenTelemetry ──────────────────────────────────
 def _init_otel():
@@ -99,11 +102,24 @@ app.include_router(wage.router)
 app.include_router(macro_lab.router)
 
 
-@app.get("/")
-async def root():
-    return {"service": "LMDT 2.0 Backend", "status": "running", "version": "2.0.0"}
-
-
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+# ── SPA 静态文件服务（生产部署） ────────────────
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+if os.path.isdir(STATIC_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+    
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """SPA fallback: 所有非 API 路径返回 index.html"""
+        file_path = os.path.join(STATIC_DIR, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    
+    # 覆盖根路由：返回 SPA 首页
+    @app.get("/")
+    async def serve_root():
+        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
